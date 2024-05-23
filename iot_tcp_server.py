@@ -2,8 +2,8 @@ import asyncio
 import aio_pika
 import json
 from pydantic import BaseModel, ValidationError
-from config import RABBITMQ_URL, TCP_SERVER_PORT, TCP_SERVER_HOST, LOCATION_Q, log
-import iot_device_simulator
+from config import RABBITMQ_URL, TCP_SERVER_PORT, TCP_SERVER_HOST, LOCATION_Q,EXCHANGE_NAME,ROUTING_KEY,log
+
 """
     Tcp soketi dinler, 
     Gelen mesajı MessageModel ile karşılaştırır
@@ -15,7 +15,8 @@ class MessageModel(BaseModel):
     device_uid: int
     lat: float
     long: float
-    time: float
+    created_at: float
+
 
 async def handle_message(reader, writer):
     try:
@@ -24,14 +25,21 @@ async def handle_message(reader, writer):
         message = MessageModel(**message)
 
         addr = writer.get_extra_info('peername')
-        log.info(f"Received message from {addr}")
+        log.info(f"Iot_tcp_server received message from {addr}")
 
         connection = await aio_pika.connect_robust(RABBITMQ_URL)
         async with connection:
             channel = await connection.channel()
-            await channel.default_exchange.publish(
-                aio_pika.Message(body=json.dumps(message.dict()).encode()),
-                routing_key=LOCATION_Q
+            exchange = await channel.declare_exchange(
+                EXCHANGE_NAME, aio_pika.ExchangeType.DIRECT,durable=True
+            )
+            queue = await channel.declare_queue(LOCATION_Q)
+            await queue.bind(exchange, ROUTING_KEY)
+            await exchange.publish(
+                aio_pika.Message(body=json.dumps(message.dict()).encode(),
+                                 expiration=3600000),
+                routing_key=ROUTING_KEY
+
             )
         writer.close()
 
@@ -62,4 +70,5 @@ async def main():
     except Exception as e:
         log.error(f"{str(e)}")
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

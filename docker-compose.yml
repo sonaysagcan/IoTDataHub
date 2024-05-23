@@ -1,0 +1,44 @@
+version: "3.3"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.8.9-management
+    ports:
+      - 15672:15672
+      - 5672:5672
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin
+    volumes:
+      - ./resources:/opt/resources
+    tmpfs:
+      - /var/lib/rabbitmq
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3.3
+    ports:
+      - 8123:8123
+    volumes:
+      - ./resources/clickhouse/config.xml:/etc/clickhouse-server/config.d/config.xml
+      - ./resources/clickhouse/init.sql:/opt/init.sql
+    tmpfs:
+      - /var/lib/clickhouse
+
+  iot_tcp_server:
+    build: .
+    depends_on:
+      - rabbitmq
+      - clickhouse
+    volumes:
+      - .:/app
+    command: python iot_tcp_server.py
+    ports:
+      - 54321:54321
+
+  iot_device_simulator:
+    build: .
+    volumes:
+      - .:/app
+    command: python iot_device_simulator.py
+    depends_on:
+      - iot_tcp_server
